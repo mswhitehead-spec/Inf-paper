@@ -24,6 +24,7 @@ function updateLiveShape(gEl, shapeStart, wx, wy, color, width) {
     el.setAttribute('height', Math.abs(y2 - y1));
     el.setAttribute('stroke', color);
     el.setAttribute('stroke-width', width);
+    el.setAttribute('vector-effect', 'non-scaling-stroke');
     el.setAttribute('fill', 'none');
     gEl.appendChild(el);
     return;
@@ -37,6 +38,7 @@ function updateLiveShape(gEl, shapeStart, wx, wy, color, width) {
     el.setAttribute('ry', Math.max(0.1, Math.abs(y2 - y1) / 2));
     el.setAttribute('stroke', color);
     el.setAttribute('stroke-width', width);
+    el.setAttribute('vector-effect', 'non-scaling-stroke');
     el.setAttribute('fill', 'none');
     gEl.appendChild(el);
     return;
@@ -52,6 +54,7 @@ function updateLiveShape(gEl, shapeStart, wx, wy, color, width) {
     marker.setAttribute('refX', '9');
     marker.setAttribute('refY', '3.5');
     marker.setAttribute('orient', 'auto');
+    marker.setAttribute('markerUnits', 'userSpaceOnUse');
     const poly = svgNS('polygon');
     poly.setAttribute('points', '0 0, 10 3.5, 0 7');
     poly.setAttribute('fill', color);
@@ -66,6 +69,7 @@ function updateLiveShape(gEl, shapeStart, wx, wy, color, width) {
     line.setAttribute('y2', y2);
     line.setAttribute('stroke', color);
     line.setAttribute('stroke-width', width);
+    line.setAttribute('vector-effect', 'non-scaling-stroke');
     line.setAttribute('stroke-linecap', 'round');
     line.setAttribute('marker-end', `url(#${markerId})`);
     gEl.appendChild(line);
@@ -152,15 +156,12 @@ export default function InfiniteCanvas({
 
     if (t === 'pen' || t === 'highlight') {
       const isHL = t === 'highlight';
-      const screenW = strokeWidthRef.current;
-      const worldW = isHL
-        ? Math.max(screenW * 5, 18) / zoomRef.current
-        : screenW / zoomRef.current;
-      drawing.startStroke(w.x, w.y, strokeColorRef.current, worldW, t);
+      drawing.startStroke(w.x, w.y, strokeColorRef.current, strokeWidthRef.current, t);
       const el = livePathRef.current;
       if (el) {
         el.setAttribute('stroke', strokeColorRef.current);
-        el.setAttribute('stroke-width', worldW);
+        el.setAttribute('stroke-width', isHL ? Math.max(strokeWidthRef.current * 5, 18) : strokeWidthRef.current);
+        el.setAttribute('vector-effect', 'non-scaling-stroke');
         el.setAttribute('opacity', isHL ? '0.35' : '1');
         el.setAttribute('d', '');
       }
@@ -222,7 +223,7 @@ export default function InfiniteCanvas({
 
     if (actionRef.current === 'shape' && shapeStartRef.current) {
       const g = liveShapeRef.current;
-      if (g) updateLiveShape(g, shapeStartRef.current, w.x, w.y, strokeColorRef.current, strokeWidthRef.current / zoomRef.current);
+      if (g) updateLiveShape(g, shapeStartRef.current, w.x, w.y, strokeColorRef.current, strokeWidthRef.current);
     }
   }, [applyPanDelta, drawing, screenToWorld]);
 
@@ -244,7 +245,7 @@ export default function InfiniteCanvas({
           type: start.type,
           points: [{ x: start.x, y: start.y }, { x: w.x, y: w.y }],
           color: strokeColorRef.current,
-          width: strokeWidthRef.current / zoomRef.current,
+          width: strokeWidthRef.current,
           opacity: 1,
         });
       }

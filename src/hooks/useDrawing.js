@@ -19,12 +19,13 @@ export function useDrawing() {
 
   const startStroke = useCallback((wx, wy, color, width, type = 'pen') => {
     const opacity = type === 'highlight' ? 0.35 : 1;
+    const actualWidth = type === 'highlight' ? Math.max(width * 5, 18) : width;
     currentStrokeRef.current = {
       id: uid(),
       type,
       points: [{ x: wx, y: wy }],
       color,
-      width,
+      width: actualWidth,
       opacity,
     };
   }, []);

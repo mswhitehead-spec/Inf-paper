@@ -12,6 +12,7 @@ function renderStroke(stroke) {
         strokeWidth={stroke.width}
         strokeLinecap="round"
         strokeLinejoin="round"
+        vectorEffect="non-scaling-stroke"
         fill="none"
         opacity={stroke.opacity}
       />
@@ -30,6 +31,7 @@ function renderStroke(stroke) {
         x={x} y={y} width={w} height={h}
         stroke={stroke.color}
         strokeWidth={stroke.width}
+        vectorEffect="non-scaling-stroke"
         fill="none"
         opacity={stroke.opacity ?? 1}
       />
@@ -48,6 +50,7 @@ function renderStroke(stroke) {
         cx={cx} cy={cy} rx={Math.max(0.1, rx)} ry={Math.max(0.1, ry)}
         stroke={stroke.color}
         strokeWidth={stroke.width}
+        vectorEffect="non-scaling-stroke"
         fill="none"
         opacity={stroke.opacity ?? 1}
       />
@@ -65,6 +68,7 @@ function renderStroke(stroke) {
             markerWidth="10" markerHeight="7"
             refX="9" refY="3.5"
             orient="auto"
+            markerUnits="userSpaceOnUse"
           >
             <polygon points="0 0, 10 3.5, 0 7" fill={stroke.color} />
           </marker>
@@ -73,6 +77,7 @@ function renderStroke(stroke) {
           x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y}
           stroke={stroke.color}
           strokeWidth={stroke.width}
+          vectorEffect="non-scaling-stroke"
           strokeLinecap="round"
           markerEnd={`url(#${markerId})`}
         />
@@ -86,7 +91,6 @@ function renderStroke(stroke) {
 export default function StrokeLayer({ strokes, livePathRef, liveShapeRef }) {
   return (
     <>
-      {/* Committed strokes */}
       <svg
         style={{
           position: 'absolute',
@@ -99,7 +103,6 @@ export default function StrokeLayer({ strokes, livePathRef, liveShapeRef }) {
         {strokes.map(renderStroke)}
       </svg>
 
-      {/* Live pen/highlight stroke — updated via direct DOM */}
       <svg
         style={{
           position: 'absolute',
@@ -113,12 +116,12 @@ export default function StrokeLayer({ strokes, livePathRef, liveShapeRef }) {
           ref={livePathRef}
           strokeLinecap="round"
           strokeLinejoin="round"
+          vectorEffect="non-scaling-stroke"
           fill="none"
           d=""
         />
       </svg>
 
-      {/* Live shape preview — updated via direct DOM */}
       <svg
         style={{
           position: 'absolute',
