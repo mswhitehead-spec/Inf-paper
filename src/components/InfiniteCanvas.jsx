@@ -151,12 +151,16 @@ export default function InfiniteCanvas({
     const w = screenToWorld(e.clientX, e.clientY);
 
     if (t === 'pen' || t === 'highlight') {
-      drawing.startStroke(w.x, w.y, strokeColorRef.current, strokeWidthRef.current, t);
+      const isHL = t === 'highlight';
+      const screenW = strokeWidthRef.current;
+      const worldW = isHL
+        ? Math.max(screenW * 5, 18) / zoomRef.current
+        : screenW / zoomRef.current;
+      drawing.startStroke(w.x, w.y, strokeColorRef.current, worldW, t);
       const el = livePathRef.current;
       if (el) {
-        const isHL = t === 'highlight';
         el.setAttribute('stroke', strokeColorRef.current);
-        el.setAttribute('stroke-width', isHL ? Math.max(strokeWidthRef.current * 5, 18) : strokeWidthRef.current);
+        el.setAttribute('stroke-width', worldW);
         el.setAttribute('opacity', isHL ? '0.35' : '1');
         el.setAttribute('d', '');
       }
@@ -218,7 +222,7 @@ export default function InfiniteCanvas({
 
     if (actionRef.current === 'shape' && shapeStartRef.current) {
       const g = liveShapeRef.current;
-      if (g) updateLiveShape(g, shapeStartRef.current, w.x, w.y, strokeColorRef.current, strokeWidthRef.current);
+      if (g) updateLiveShape(g, shapeStartRef.current, w.x, w.y, strokeColorRef.current, strokeWidthRef.current / zoomRef.current);
     }
   }, [applyPanDelta, drawing, screenToWorld]);
 
@@ -240,7 +244,7 @@ export default function InfiniteCanvas({
           type: start.type,
           points: [{ x: start.x, y: start.y }, { x: w.x, y: w.y }],
           color: strokeColorRef.current,
-          width: strokeWidthRef.current,
+          width: strokeWidthRef.current / zoomRef.current,
           opacity: 1,
         });
       }
@@ -297,7 +301,7 @@ export default function InfiniteCanvas({
       const { distance: oldDist, cx: oldCx, cy: oldCy, panX: oldPanX, panY: oldPanY, zoom: oldZoom } = pinchRef.current;
 
       const zoomFactor = newDist / Math.max(oldDist, 1);
-      const newZoom = Math.min(500, Math.max(0.01, oldZoom * zoomFactor));
+      const newZoom = Math.min(5000, Math.max(0.01, oldZoom * zoomFactor));
       const effectiveFactor = newZoom / oldZoom;
       // Anchor world-point at old finger-midpoint to new finger-midpoint
       const newPanX = newCx - (oldCx - oldPanX) * effectiveFactor;
