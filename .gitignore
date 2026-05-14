@@ -1,4 +1,5 @@
-node_modules/
-dist/
-.env
-.env.local
+*
+!.nojekyll
+!index.html
+!assets/
+!assets/*
