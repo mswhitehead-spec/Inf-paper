@@ -1,7 +1,6 @@
-import { useRef, useCallback } from 'react';
+import { useRef } from 'react';
+import { useMediaQuery } from '../hooks/useMediaQuery.js';
 
-const MAP_W = 200;
-const MAP_H = 140;
 const PAD = 40;
 
 function getBounds(strokes, nodes) {
@@ -29,31 +28,28 @@ function getBounds(strokes, nodes) {
 }
 
 export default function Minimap({ strokes, nodes, viewport }) {
-  const { panX, panY, zoom, applyPanDelta } = viewport;
+  const { panX, panY, zoom } = viewport;
   const isDragging = useRef(false);
-  const lastPos = useRef({ x: 0, y: 0 });
+  const isSmall = useMediaQuery('(max-width: 640px)');
+  const isTiny = useMediaQuery('(max-width: 380px)');
 
+  if (isTiny) return null;
   if (strokes.length === 0 && nodes.length === 0) return null;
+
+  const MAP_W = isSmall ? 140 : 200;
+  const MAP_H = isSmall ? 90 : 140;
 
   const bounds = getBounds(strokes, nodes);
   const contentW = bounds.maxX - bounds.minX;
   const contentH = bounds.maxY - bounds.minY;
-
   if (contentW <= 0 || contentH <= 0) return null;
 
-  const scaleX = MAP_W / contentW;
-  const scaleY = MAP_H / contentH;
-  const scale = Math.min(scaleX, scaleY);
+  const scale = Math.min(MAP_W / contentW, MAP_H / contentH);
 
-  // World → minimap coordinate
   function toMap(wx, wy) {
-    return {
-      x: (wx - bounds.minX) * scale,
-      y: (wy - bounds.minY) * scale,
-    };
+    return { x: (wx - bounds.minX) * scale, y: (wy - bounds.minY) * scale };
   }
 
-  // Viewport rect in world space
   const vpLeft = -panX / zoom;
   const vpTop = -panY / zoom;
   const vpRight = (window.innerWidth - panX) / zoom;
@@ -64,30 +60,12 @@ export default function Minimap({ strokes, nodes, viewport }) {
   const vpMapW = vpMapBR.x - vpMapTL.x;
   const vpMapH = vpMapBR.y - vpMapTL.y;
 
-  const handlePointerDown = (e) => {
-    isDragging.current = true;
-    lastPos.current = { x: e.clientX, y: e.clientY };
-    e.currentTarget.setPointerCapture(e.pointerId);
-    navigateToClick(e);
-  };
-
-  const handlePointerMove = (e) => {
-    if (!isDragging.current) return;
-    const dx = (e.clientX - lastPos.current.x) / scale * zoom;
-    const dy = (e.clientY - lastPos.current.y) / scale * zoom;
-    applyPanDelta(-dx, -dy);
-    lastPos.current = { x: e.clientX, y: e.clientY };
-  };
-
-  const handlePointerUp = () => { isDragging.current = false; };
-
   function navigateToClick(e) {
     const rect = e.currentTarget.getBoundingClientRect();
     const mx = e.clientX - rect.left;
     const my = e.clientY - rect.top;
     const worldX = mx / scale + bounds.minX;
     const worldY = my / scale + bounds.minY;
-    // Pan so the clicked world point is at screen center
     viewport.setViewport({
       panX: window.innerWidth / 2 - worldX * zoom,
       panY: window.innerHeight / 2 - worldY * zoom,
@@ -99,24 +77,37 @@ export default function Minimap({ strokes, nodes, viewport }) {
     <div
       style={{
         position: 'fixed',
-        bottom: 20,
-        right: 20,
+        bottom: 'max(20px, calc(env(safe-area-inset-bottom) + 12px))',
+        right: 'max(20px, calc(env(safe-area-inset-right) + 12px))',
         width: MAP_W,
         height: MAP_H,
         background: 'rgba(255,255,255,0.92)',
         backdropFilter: 'blur(6px)',
+        WebkitBackdropFilter: 'blur(6px)',
         borderRadius: 10,
         boxShadow: '0 2px 12px rgba(0,0,0,0.12)',
         overflow: 'hidden',
         zIndex: 900,
         cursor: 'crosshair',
+        touchAction: 'none',
       }}
-      onPointerDown={handlePointerDown}
-      onPointerMove={handlePointerMove}
-      onPointerUp={handlePointerUp}
+      onPointerDown={(e) => {
+        e.stopPropagation();
+        isDragging.current = true;
+        try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* ignore */ }
+        navigateToClick(e);
+      }}
+      onPointerMove={(e) => {
+        if (!isDragging.current) return;
+        e.stopPropagation();
+        navigateToClick(e);
+      }}
+      onPointerUp={(e) => {
+        isDragging.current = false;
+        try { e.currentTarget.releasePointerCapture(e.pointerId); } catch { /* ignore */ }
+      }}
     >
       <svg width={MAP_W} height={MAP_H} style={{ display: 'block' }}>
-        {/* Node bounding boxes */}
         {nodes.map(n => {
           const tl = toMap(n.x, n.y);
           const br = toMap(n.x + n.width, n.y + n.height);
@@ -133,7 +124,6 @@ export default function Minimap({ strokes, nodes, viewport }) {
           );
         })}
 
-        {/* Stroke dots (sample every few points for perf) */}
         {strokes.map(s => {
           const sample = s.points.filter((_, i) => i % 4 === 0);
           if (sample.length < 2) return null;
@@ -154,7 +144,6 @@ export default function Minimap({ strokes, nodes, viewport }) {
           );
         })}
 
-        {/* Viewport indicator */}
         <rect
           x={vpMapTL.x} y={vpMapTL.y}
           width={Math.max(4, vpMapW)}

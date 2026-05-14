@@ -28,7 +28,7 @@ export default function App() {
   const nodesRef = useRef(nodes);
   nodesRef.current = nodes;
 
-  const { handleDragOver, handleDrop } = usePasteAndDrop({
+  const { handleDragOver, handleDrop, handleFiles } = usePasteAndDrop({
     viewportRef,
     nodesRef,
     setLoading,
@@ -126,6 +126,7 @@ export default function App() {
         onWidthChange={setStrokeWidth}
         panelOpen={panelOpen}
         onTogglePanel={() => setPanelOpen(p => !p)}
+        onPickFiles={handleFiles}
         onClearAll={() => {
           if (confirm('Clear everything on the canvas?')) {
             drawing.setStrokes([]);

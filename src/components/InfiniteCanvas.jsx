@@ -13,7 +13,6 @@ function svgNS(tag) {
 function updateLiveShape(gEl, shapeStart, wx, wy, color, width) {
   while (gEl.firstChild) gEl.removeChild(gEl.firstChild);
   if (!shapeStart) return;
-
   const { x: x1, y: y1, type } = shapeStart;
   const x2 = wx, y2 = wy;
 
@@ -73,6 +72,17 @@ function updateLiveShape(gEl, shapeStart, wx, wy, color, width) {
   }
 }
 
+const TOOL_CURSORS = {
+  select: 'default',
+  pen: 'crosshair',
+  highlight: 'crosshair',
+  eraser: 'cell',
+  text: 'text',
+  rect: 'crosshair',
+  ellipse: 'crosshair',
+  arrow: 'crosshair',
+};
+
 export default function InfiniteCanvas({
   viewport,
   tool,
@@ -92,24 +102,239 @@ export default function InfiniteCanvas({
   const livePathRef = useRef(null);
   const liveShapeRef = useRef(null);
 
-  // Mutable interaction state (no React re-renders needed)
-  const spaceHeldRef = useRef(false);
-  const isPanningRef = useRef(false);
+  // Refs for always-fresh values inside stable callbacks
+  const toolRef = useRef(tool); toolRef.current = tool;
+  const strokeColorRef = useRef(strokeColor); strokeColorRef.current = strokeColor;
+  const strokeWidthRef = useRef(strokeWidth); strokeWidthRef.current = strokeWidth;
+  const zoomRef = useRef(zoom); zoomRef.current = zoom;
+  const panXRef = useRef(panX); panXRef.current = panX;
+  const panYRef = useRef(panY); panYRef.current = panY;
+
+  // Multi-touch state
+  const pointersRef = useRef(new Map()); // pointerId → {x, y, type}
+  const pinchRef = useRef(null);          // { distance, cx, cy } or null
+  const actionRef = useRef(null);         // 'pan' | 'pen' | 'shape' | 'eraser' | null
   const lastPointerRef = useRef({ x: 0, y: 0 });
   const shapeStartRef = useRef(null);
-  const toolRef = useRef(tool);
-  toolRef.current = tool;
-  const strokeColorRef = useRef(strokeColor);
-  strokeColorRef.current = strokeColor;
-  const strokeWidthRef = useRef(strokeWidth);
-  strokeWidthRef.current = strokeWidth;
-  const zoomRef = useRef(zoom);
-  zoomRef.current = zoom;
+  const spaceHeldRef = useRef(false);
 
-  // Cursor is the only thing we need React state for
   const [cursor, setCursor] = useState('default');
 
-  // Non-passive wheel listener (passive:false required for e.preventDefault)
+  // Cancel whatever single-pointer action is in progress.
+  const cancelSingleAction = useCallback(() => {
+    if (actionRef.current === 'pen') {
+      drawing.cancelStroke();
+      if (livePathRef.current) livePathRef.current.setAttribute('d', '');
+    } else if (actionRef.current === 'shape') {
+      shapeStartRef.current = null;
+      const g = liveShapeRef.current;
+      if (g) while (g.firstChild) g.removeChild(g.firstChild);
+    }
+    actionRef.current = null;
+  }, [drawing]);
+
+  // Begin a single-pointer action based on the current tool.
+  const startSingleAction = useCallback((e) => {
+    const t = toolRef.current;
+
+    // Pan: space+left or middle button or mouse with no tool intent
+    if (spaceHeldRef.current || e.button === 1) {
+      actionRef.current = 'pan';
+      lastPointerRef.current = { x: e.clientX, y: e.clientY };
+      setCursor('grabbing');
+      return;
+    }
+
+    // Deselect any node when clicking empty canvas
+    onSelectNode(null);
+
+    const w = screenToWorld(e.clientX, e.clientY);
+
+    if (t === 'pen' || t === 'highlight') {
+      drawing.startStroke(w.x, w.y, strokeColorRef.current, strokeWidthRef.current, t);
+      const el = livePathRef.current;
+      if (el) {
+        const isHL = t === 'highlight';
+        el.setAttribute('stroke', strokeColorRef.current);
+        el.setAttribute('stroke-width', isHL ? Math.max(strokeWidthRef.current * 5, 18) : strokeWidthRef.current);
+        el.setAttribute('opacity', isHL ? '0.35' : '1');
+        el.setAttribute('d', '');
+      }
+      actionRef.current = 'pen';
+      return;
+    }
+
+    if (t === 'eraser') {
+      const r = ERASER_SCREEN_RADIUS / zoomRef.current;
+      drawing.eraseNear(w.x, w.y, r);
+      actionRef.current = 'eraser';
+      return;
+    }
+
+    if (t === 'text') {
+      const id = nodes.addNode({
+        type: 'text', x: w.x, y: w.y,
+        width: 300, height: 80,
+        content: '', editing: true,
+      });
+      onSelectNode(id);
+      onSetTool('select');
+      actionRef.current = null;
+      return;
+    }
+
+    if (t === 'rect' || t === 'ellipse' || t === 'arrow') {
+      shapeStartRef.current = { x: w.x, y: w.y, type: t };
+      actionRef.current = 'shape';
+      return;
+    }
+  }, [drawing, nodes, onSelectNode, onSetTool, screenToWorld]);
+
+  // Continue a single-pointer action.
+  const continueSingleAction = useCallback((e) => {
+    if (actionRef.current === 'pan') {
+      const dx = e.clientX - lastPointerRef.current.x;
+      const dy = e.clientY - lastPointerRef.current.y;
+      applyPanDelta(dx, dy);
+      lastPointerRef.current = { x: e.clientX, y: e.clientY };
+      return;
+    }
+
+    const w = screenToWorld(e.clientX, e.clientY);
+
+    if (actionRef.current === 'pen') {
+      drawing.addPoint(w.x, w.y, zoomRef.current);
+      const el = livePathRef.current;
+      if (el && drawing.currentStrokeRef.current) {
+        el.setAttribute('d', pointsToSvgPath(drawing.currentStrokeRef.current.points));
+      }
+      return;
+    }
+
+    if (actionRef.current === 'eraser') {
+      drawing.eraseNear(w.x, w.y, ERASER_SCREEN_RADIUS / zoomRef.current);
+      return;
+    }
+
+    if (actionRef.current === 'shape' && shapeStartRef.current) {
+      const g = liveShapeRef.current;
+      if (g) updateLiveShape(g, shapeStartRef.current, w.x, w.y, strokeColorRef.current, strokeWidthRef.current);
+    }
+  }, [applyPanDelta, drawing, screenToWorld]);
+
+  // Finalize a single-pointer action.
+  const endSingleAction = useCallback((e) => {
+    const action = actionRef.current;
+
+    if (action === 'pan') {
+      setCursor(spaceHeldRef.current ? 'grab' : (TOOL_CURSORS[toolRef.current] || 'default'));
+    } else if (action === 'pen') {
+      drawing.endStroke();
+      if (livePathRef.current) livePathRef.current.setAttribute('d', '');
+    } else if (action === 'shape' && shapeStartRef.current) {
+      const start = shapeStartRef.current;
+      const w = screenToWorld(e.clientX, e.clientY);
+      if (Math.abs(w.x - start.x) > 2 || Math.abs(w.y - start.y) > 2) {
+        drawing.commitShape({
+          id: uid(),
+          type: start.type,
+          points: [{ x: start.x, y: start.y }, { x: w.x, y: w.y }],
+          color: strokeColorRef.current,
+          width: strokeWidthRef.current,
+          opacity: 1,
+        });
+      }
+      const g = liveShapeRef.current;
+      if (g) while (g.firstChild) g.removeChild(g.firstChild);
+      shapeStartRef.current = null;
+    }
+
+    actionRef.current = null;
+  }, [drawing, screenToWorld]);
+
+  // ─── Pointer event handlers ───────────────────────────────────────────────
+
+  const handlePointerDown = useCallback((e) => {
+    if (e.button !== 0 && e.button !== 1 && e.pointerType !== 'touch' && e.pointerType !== 'pen') return;
+
+    pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY, type: e.pointerType });
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* ignore */ }
+
+    const count = pointersRef.current.size;
+
+    if (count === 1) {
+      startSingleAction(e);
+    } else if (count === 2) {
+      cancelSingleAction();
+      const [p1, p2] = [...pointersRef.current.values()];
+      pinchRef.current = {
+        distance: Math.hypot(p2.x - p1.x, p2.y - p1.y),
+        cx: (p1.x + p2.x) / 2,
+        cy: (p1.y + p2.y) / 2,
+        // Snapshot the viewport state at pinch start, then update locally each move
+        // (avoids the 1-frame lag between setViewport and ref updates)
+        panX: panXRef.current,
+        panY: panYRef.current,
+        zoom: zoomRef.current,
+      };
+    }
+    // ≥3 pointers: ignored (already in pinch mode)
+  }, [startSingleAction, cancelSingleAction]);
+
+  const handlePointerMove = useCallback((e) => {
+    if (!pointersRef.current.has(e.pointerId)) return;
+    pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY, type: e.pointerType });
+
+    const count = pointersRef.current.size;
+
+    if (count >= 2 && pinchRef.current) {
+      const pts = [...pointersRef.current.values()].slice(0, 2);
+      const [p1, p2] = pts;
+      const newDist = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+      const newCx = (p1.x + p2.x) / 2;
+      const newCy = (p1.y + p2.y) / 2;
+
+      const { distance: oldDist, cx: oldCx, cy: oldCy, panX: oldPanX, panY: oldPanY, zoom: oldZoom } = pinchRef.current;
+
+      const zoomFactor = newDist / Math.max(oldDist, 1);
+      const newZoom = Math.min(20, Math.max(0.05, oldZoom * zoomFactor));
+      const effectiveFactor = newZoom / oldZoom;
+      // Anchor world-point at old finger-midpoint to new finger-midpoint
+      const newPanX = newCx - (oldCx - oldPanX) * effectiveFactor;
+      const newPanY = newCy - (oldCy - oldPanY) * effectiveFactor;
+
+      setViewport({ panX: newPanX, panY: newPanY, zoom: newZoom });
+
+      pinchRef.current = {
+        distance: newDist, cx: newCx, cy: newCy,
+        panX: newPanX, panY: newPanY, zoom: newZoom,
+      };
+      return;
+    }
+
+    if (count === 1 && actionRef.current) {
+      continueSingleAction(e);
+    }
+  }, [continueSingleAction, setViewport]);
+
+  const handlePointerUp = useCallback((e) => {
+    if (!pointersRef.current.has(e.pointerId)) return;
+    pointersRef.current.delete(e.pointerId);
+    try { e.currentTarget.releasePointerCapture(e.pointerId); } catch { /* ignore */ }
+
+    const count = pointersRef.current.size;
+
+    if (count === 0) {
+      if (actionRef.current) endSingleAction(e);
+      pinchRef.current = null;
+    } else if (count === 1) {
+      // End pinch; don't resume single-pointer action until all fingers lift
+      pinchRef.current = null;
+    }
+  }, [endSingleAction]);
+
+  // ─── Wheel + keyboard ─────────────────────────────────────────────────────
+
   useEffect(() => {
     const el = rootRef.current;
     if (!el) return;
@@ -125,7 +350,6 @@ export default function InfiniteCanvas({
     return () => el.removeEventListener('wheel', onWheel);
   }, [applyZoom, applyPanDelta]);
 
-  // Keyboard: space for pan, tool shortcuts
   useEffect(() => {
     function onKeyDown(e) {
       if (e.target?.contentEditable === 'true') return;
@@ -134,7 +358,6 @@ export default function InfiniteCanvas({
         spaceHeldRef.current = true;
         setCursor('grab');
       }
-      // Tool shortcuts
       const shortcuts = { v: 'select', p: 'pen', h: 'highlight', e: 'eraser', t: 'text', r: 'rect', o: 'ellipse', a: 'arrow' };
       const k = e.key.toLowerCase();
       if (shortcuts[k] && !e.ctrlKey && !e.metaKey && !e.altKey) {
@@ -144,8 +367,8 @@ export default function InfiniteCanvas({
     function onKeyUp(e) {
       if (e.code === 'Space') {
         spaceHeldRef.current = false;
-        if (!isPanningRef.current) {
-          updateCursorFromTool(toolRef.current, setCursor);
+        if (actionRef.current !== 'pan') {
+          setCursor(TOOL_CURSORS[toolRef.current] || 'default');
         }
       }
     }
@@ -157,176 +380,31 @@ export default function InfiniteCanvas({
     };
   }, [onSetTool]);
 
-  // Update cursor when tool changes
   useEffect(() => {
-    if (!spaceHeldRef.current && !isPanningRef.current) {
-      updateCursorFromTool(tool, setCursor);
+    if (!spaceHeldRef.current && actionRef.current !== 'pan') {
+      setCursor(TOOL_CURSORS[tool] || 'default');
     }
   }, [tool]);
-
-  // Pointer down
-  const handlePointerDown = useCallback((e) => {
-    if (e.button !== 0 && e.button !== 1) return;
-    const t = toolRef.current;
-
-    // Pan: space+left or middle mouse
-    if (spaceHeldRef.current || e.button === 1) {
-      e.preventDefault();
-      isPanningRef.current = true;
-      lastPointerRef.current = { x: e.clientX, y: e.clientY };
-      setCursor('grabbing');
-      e.currentTarget.setPointerCapture(e.pointerId);
-      return;
-    }
-
-    // Click on empty canvas → deselect node
-    onSelectNode(null);
-
-    const w = screenToWorld(e.clientX, e.clientY);
-
-    if (t === 'pen' || t === 'highlight') {
-      drawing.startStroke(w.x, w.y, strokeColorRef.current, strokeWidthRef.current, t);
-      // Prepare live path element
-      const el = livePathRef.current;
-      if (el) {
-        const isHL = t === 'highlight';
-        el.setAttribute('stroke', strokeColorRef.current);
-        el.setAttribute('stroke-width', isHL ? Math.max(strokeWidthRef.current * 5, 18) : strokeWidthRef.current);
-        el.setAttribute('opacity', isHL ? '0.35' : '1');
-        el.setAttribute('d', '');
-      }
-      e.currentTarget.setPointerCapture(e.pointerId);
-      return;
-    }
-
-    if (t === 'eraser') {
-      const r = ERASER_SCREEN_RADIUS / zoomRef.current;
-      drawing.eraseNear(w.x, w.y, r);
-      e.currentTarget.setPointerCapture(e.pointerId);
-      return;
-    }
-
-    if (t === 'text') {
-      const id = nodes.addNode({
-        type: 'text',
-        x: w.x,
-        y: w.y,
-        width: 300,
-        height: 80,
-        content: '',
-        editing: true,
-      });
-      onSelectNode(id);
-      onSetTool('select');
-      return;
-    }
-
-    if (t === 'rect' || t === 'ellipse' || t === 'arrow') {
-      shapeStartRef.current = { x: w.x, y: w.y, type: t };
-      e.currentTarget.setPointerCapture(e.pointerId);
-      return;
-    }
-  }, [drawing, nodes, onSelectNode, onSetTool, screenToWorld]);
-
-  // Pointer move
-  const handlePointerMove = useCallback((e) => {
-    if (isPanningRef.current) {
-      const dx = e.clientX - lastPointerRef.current.x;
-      const dy = e.clientY - lastPointerRef.current.y;
-      applyPanDelta(dx, dy);
-      lastPointerRef.current = { x: e.clientX, y: e.clientY };
-      return;
-    }
-
-    const t = toolRef.current;
-
-    if (!(e.buttons & 1)) return; // left button not held
-
-    const w = screenToWorld(e.clientX, e.clientY);
-
-    if (t === 'pen' || t === 'highlight') {
-      drawing.addPoint(w.x, w.y, zoomRef.current);
-      // Direct DOM update for live stroke
-      const el = livePathRef.current;
-      if (el && drawing.currentStrokeRef.current) {
-        const d = pointsToSvgPath(drawing.currentStrokeRef.current.points);
-        el.setAttribute('d', d);
-      }
-      return;
-    }
-
-    if (t === 'eraser') {
-      const r = ERASER_SCREEN_RADIUS / zoomRef.current;
-      drawing.eraseNear(w.x, w.y, r);
-      return;
-    }
-
-    if (shapeStartRef.current && (t === 'rect' || t === 'ellipse' || t === 'arrow')) {
-      const g = liveShapeRef.current;
-      if (g) {
-        updateLiveShape(g, shapeStartRef.current, w.x, w.y, strokeColorRef.current, strokeWidthRef.current);
-      }
-    }
-  }, [applyPanDelta, drawing, screenToWorld]);
-
-  // Pointer up
-  const handlePointerUp = useCallback((e) => {
-    if (isPanningRef.current) {
-      isPanningRef.current = false;
-      setCursor(spaceHeldRef.current ? 'grab' : undefined);
-      updateCursorFromTool(toolRef.current, setCursor);
-      return;
-    }
-
-    const t = toolRef.current;
-
-    if (t === 'pen' || t === 'highlight') {
-      drawing.endStroke();
-      // Clear live path
-      const el = livePathRef.current;
-      if (el) el.setAttribute('d', '');
-      return;
-    }
-
-    if (shapeStartRef.current && (t === 'rect' || t === 'ellipse' || t === 'arrow')) {
-      const start = shapeStartRef.current;
-      const w = screenToWorld(e.clientX, e.clientY);
-      const dx = w.x - start.x, dy = w.y - start.y;
-
-      // Only commit if the shape is large enough
-      if (Math.abs(dx) > 2 || Math.abs(dy) > 2) {
-        drawing.commitShape({
-          id: uid(),
-          type: t,
-          points: [{ x: start.x, y: start.y }, { x: w.x, y: w.y }],
-          color: strokeColorRef.current,
-          width: strokeWidthRef.current,
-          opacity: 1,
-        });
-      }
-      // Clear live shape preview
-      const g = liveShapeRef.current;
-      if (g) while (g.firstChild) g.removeChild(g.firstChild);
-      shapeStartRef.current = null;
-    }
-  }, [drawing, screenToWorld]);
 
   return (
     <div
       ref={rootRef}
+      className="canvas-root"
       style={{
         position: 'absolute',
         inset: 0,
         overflow: 'hidden',
         cursor,
+        touchAction: 'none',
       }}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
+      onPointerCancel={handlePointerUp}
       onDragOver={onDragOver}
       onDrop={onDrop}
+      onContextMenu={(e) => e.preventDefault()}
     >
-      {/* The infinite world — transformed via pan/zoom */}
       <div
         style={{
           position: 'absolute',
@@ -351,18 +429,4 @@ export default function InfiniteCanvas({
       </div>
     </div>
   );
-}
-
-function updateCursorFromTool(tool, setCursor) {
-  const map = {
-    select: 'default',
-    pen: 'crosshair',
-    highlight: 'crosshair',
-    eraser: 'cell',
-    text: 'text',
-    rect: 'crosshair',
-    ellipse: 'crosshair',
-    arrow: 'crosshair',
-  };
-  setCursor(map[tool] || 'default');
 }

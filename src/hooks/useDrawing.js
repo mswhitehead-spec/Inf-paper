@@ -51,6 +51,10 @@ export function useDrawing() {
     }
   }, []);
 
+  const cancelStroke = useCallback(() => {
+    currentStrokeRef.current = null;
+  }, []);
+
   const commitShape = useCallback((shapeStroke) => {
     currentStrokeRef.current = null;
     setStrokes(prev => [...prev, shapeStroke]);
@@ -83,6 +87,7 @@ export function useDrawing() {
     startStroke,
     addPoint,
     endStroke,
+    cancelStroke,
     commitShape,
     eraseNear,
     setStrokes: setStrokes2,

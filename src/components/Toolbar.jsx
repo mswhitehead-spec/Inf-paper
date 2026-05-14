@@ -1,3 +1,5 @@
+import { useRef } from 'react';
+
 const TOOLS = [
   { id: 'select', label: '⬡', title: 'Select (V)' },
   { id: 'pen', label: '✏', title: 'Pen (P)' },
@@ -13,16 +15,17 @@ const btn = (active) => ({
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'center',
-  width: 34,
-  height: 34,
+  width: 40,
+  height: 40,
   border: 'none',
   borderRadius: 8,
   cursor: 'pointer',
-  fontSize: active ? 17 : 16,
+  fontSize: 17,
   background: active ? '#e8f0fe' : 'transparent',
   color: active ? '#1a73e8' : '#444',
   fontWeight: active ? 700 : 400,
   transition: 'background 0.1s',
+  flexShrink: 0,
 });
 
 const sep = {
@@ -30,6 +33,7 @@ const sep = {
   height: 24,
   background: '#e0e0e0',
   margin: '0 4px',
+  flexShrink: 0,
 };
 
 export default function Toolbar({
@@ -37,21 +41,36 @@ export default function Toolbar({
   strokeColor, onColorChange,
   strokeWidth, onWidthChange,
   panelOpen, onTogglePanel,
+  onPickFiles,
   onClearAll,
 }) {
+  const fileInputRef = useRef(null);
+
+  const handleFileChange = async (e) => {
+    const files = [...e.target.files];
+    e.target.value = ''; // reset so same file can be picked again
+    if (files.length && onPickFiles) {
+      await onPickFiles(files);
+    }
+  };
+
   return (
     <div style={{
       position: 'fixed',
-      top: 14,
+      top: 'max(14px, env(safe-area-inset-top))',
       left: '50%',
       transform: 'translateX(-50%)',
       zIndex: 1000,
-      background: 'rgba(255,255,255,0.95)',
+      maxWidth: 'calc(100vw - 24px)',
+      background: 'rgba(255,255,255,0.96)',
       backdropFilter: 'blur(8px)',
+      WebkitBackdropFilter: 'blur(8px)',
       borderRadius: 14,
       boxShadow: '0 2px 16px rgba(0,0,0,0.12)',
       display: 'flex',
       alignItems: 'center',
+      flexWrap: 'wrap',
+      justifyContent: 'center',
       gap: 2,
       padding: '6px 10px',
       userSelect: 'none',
@@ -60,6 +79,7 @@ export default function Toolbar({
         <button
           key={t.id}
           title={t.title}
+          onPointerDown={(e) => e.stopPropagation()}
           onClick={() => onToolChange(t.id)}
           style={btn(tool === t.id)}
         >
@@ -69,20 +89,37 @@ export default function Toolbar({
 
       <div style={sep} />
 
-      <input
-        type="color"
-        value={strokeColor}
-        onChange={e => onColorChange(e.target.value)}
+      <label
         title="Stroke color"
         style={{
-          width: 28, height: 28,
-          border: '2px solid #e0e0e0',
-          borderRadius: 50,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          width: 36, height: 36,
           cursor: 'pointer',
-          padding: 0,
-          background: 'none',
+          flexShrink: 0,
         }}
-      />
+        onPointerDown={(e) => e.stopPropagation()}
+      >
+        <span style={{
+          width: 24, height: 24,
+          borderRadius: '50%',
+          background: strokeColor,
+          border: '2px solid #e0e0e0',
+          display: 'block',
+        }} />
+        <input
+          type="color"
+          value={strokeColor}
+          onChange={e => onColorChange(e.target.value)}
+          style={{
+            position: 'absolute',
+            opacity: 0,
+            width: 0, height: 0,
+            pointerEvents: 'none',
+          }}
+        />
+      </label>
 
       <input
         type="range"
@@ -90,14 +127,25 @@ export default function Toolbar({
         max={32}
         value={strokeWidth}
         onChange={e => onWidthChange(Number(e.target.value))}
+        onPointerDown={(e) => e.stopPropagation()}
         title={`Width: ${strokeWidth}px`}
-        style={{ width: 72, cursor: 'pointer', accentColor: '#1a73e8' }}
+        style={{ width: 72, cursor: 'pointer', accentColor: '#1a73e8', flexShrink: 0 }}
       />
 
       <div style={sep} />
 
       <button
+        title="Insert file"
+        onPointerDown={(e) => e.stopPropagation()}
+        onClick={() => fileInputRef.current?.click()}
+        style={btn(false)}
+      >
+        +
+      </button>
+
+      <button
         title="Content list"
+        onPointerDown={(e) => e.stopPropagation()}
         onClick={onTogglePanel}
         style={btn(panelOpen)}
       >
@@ -106,11 +154,21 @@ export default function Toolbar({
 
       <button
         title="Clear canvas"
+        onPointerDown={(e) => e.stopPropagation()}
         onClick={onClearAll}
         style={btn(false)}
       >
         🗑
       </button>
+
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*,application/pdf"
+        multiple
+        onChange={handleFileChange}
+        style={{ display: 'none' }}
+      />
     </div>
   );
 }
