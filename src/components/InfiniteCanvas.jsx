@@ -410,7 +410,6 @@ export default function InfiniteCanvas({
           position: 'absolute',
           transformOrigin: '0 0',
           transform: `translate(${panX}px, ${panY}px) scale(${zoom})`,
-          willChange: 'transform',
         }}
       >
         <StrokeLayer
