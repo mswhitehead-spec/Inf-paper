@@ -82,6 +82,7 @@ export default function ImageNode({ node, tool, selected, onUpdate, onSelect, zo
         width: node.width,
         height: node.height,
         pointerEvents: isSelect ? 'auto' : 'none',
+        touchAction: 'none',
         cursor: isSelect ? 'grab' : 'default',
         outline: selected ? '1.5px solid #1a73e8' : 'none',
         outlineOffset: 2,

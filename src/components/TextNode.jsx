@@ -89,6 +89,7 @@ export default function TextNode({ node, tool, selected, onUpdate, onSelect, zoo
         width: node.width,
         minHeight: 24,
         pointerEvents: isSelect ? 'auto' : 'none',
+        touchAction: node.editing ? 'auto' : 'none',
         cursor: isSelect && !node.editing ? 'grab' : isSelect ? 'text' : 'default',
         userSelect: node.editing ? 'text' : 'none',
         outline: node.editing

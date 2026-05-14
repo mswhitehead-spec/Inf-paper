@@ -35,7 +35,7 @@ export function useViewport() {
       if (deltaMode === 1) delta *= 20;
       if (deltaMode === 2) delta *= 300;
       const factor = delta < 0 ? 1.1 : 0.9;
-      const newZoom = clamp(v.zoom * factor, 0.05, 20);
+      const newZoom = clamp(v.zoom * factor, 0.01, 500);
       const worldX = (screenX - v.panX) / v.zoom;
       const worldY = (screenY - v.panY) / v.zoom;
       return {

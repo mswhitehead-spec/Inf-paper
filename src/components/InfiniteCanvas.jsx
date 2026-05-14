@@ -297,7 +297,7 @@ export default function InfiniteCanvas({
       const { distance: oldDist, cx: oldCx, cy: oldCy, panX: oldPanX, panY: oldPanY, zoom: oldZoom } = pinchRef.current;
 
       const zoomFactor = newDist / Math.max(oldDist, 1);
-      const newZoom = Math.min(20, Math.max(0.05, oldZoom * zoomFactor));
+      const newZoom = Math.min(500, Math.max(0.01, oldZoom * zoomFactor));
       const effectiveFactor = newZoom / oldZoom;
       // Anchor world-point at old finger-midpoint to new finger-midpoint
       const newPanX = newCx - (oldCx - oldPanX) * effectiveFactor;

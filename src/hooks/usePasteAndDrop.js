@@ -65,7 +65,7 @@ async function processFile(file, ctx) {
   return offsetY;
 }
 
-export function usePasteAndDrop({ viewportRef, nodesRef, setLoading }) {
+export function usePasteAndDrop({ viewportRef, nodesRef, setLoading, setTool }) {
   // Centralized file processor — used by paste, drop, and file picker
   const handleFiles = useCallback(async (files, screenX, screenY) => {
     if (!files?.length) return;
@@ -75,10 +75,14 @@ export function usePasteAndDrop({ viewportRef, nodesRef, setLoading }) {
     const sy = screenY ?? window.innerHeight / 2;
     const w = vp.screenToWorld(sx, sy);
     let offsetY = w.y;
+    let addedAny = false;
     for (const file of files) {
-      offsetY = await processFile(file, { worldX: w.x, offsetY, nodesApi, setLoading });
+      const newY = await processFile(file, { worldX: w.x, offsetY, nodesApi, setLoading });
+      if (newY !== offsetY) addedAny = true;
+      offsetY = newY;
     }
-  }, [viewportRef, nodesRef, setLoading]);
+    if (addedAny) setTool?.('select');
+  }, [viewportRef, nodesRef, setLoading, setTool]);
 
   // Window paste handler
   useEffect(() => {

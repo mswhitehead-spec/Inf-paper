@@ -32,6 +32,7 @@ export default function App() {
     viewportRef,
     nodesRef,
     setLoading,
+    setTool,
   });
 
   // Persist state to localStorage (debounced)
@@ -79,8 +80,8 @@ export default function App() {
     const screenH = window.innerHeight;
     const margin = 0.72;
     const targetZoom = Math.min(
-      Math.max(0.05, Math.min(20, (screenW * margin) / Math.max(node.width, 1))),
-      Math.max(0.05, Math.min(20, (screenH * margin) / Math.max(node.height, 1)))
+      Math.max(0.01, Math.min(500, (screenW * margin) / Math.max(node.width, 1))),
+      Math.max(0.01, Math.min(500, (screenH * margin) / Math.max(node.height, 1)))
     );
     const targetPanX = screenW / 2 - (node.x + node.width / 2) * targetZoom;
     const targetPanY = screenH / 2 - (node.y + node.height / 2) * targetZoom;
